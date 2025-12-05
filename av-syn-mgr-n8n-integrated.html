@@ -1,0 +1,2441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AV Syndicate Manager - n8n Ready</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <!-- 
+    ============================================
+    n8n INTEGRATION CONFIGURATION
+    ============================================
+    
+    To connect this frontend to your n8n backend:
+    
+    1. Set up n8n workflows for each API endpoint (see N8N_INTEGRATION_GUIDE.md)
+    2. Update the API_BASE_URL below (around line 21) with your n8n webhook URL
+    3. Change USE_MOCK_DATA to false when ready to connect to real backend
+    4. Ensure CORS is enabled on your n8n webhooks
+    
+    Required n8n endpoints:
+    - GET  /api/data                    - Load all initial data
+    - POST /api/deals                   - Create deal
+    - PUT  /api/deals/:id               - Update deal
+    - DELETE /api/deals/:id             - Delete deal
+    - POST /api/syndicates              - Create syndicate
+    - PUT  /api/syndicates/:id          - Update syndicate
+    - DELETE /api/syndicates/:id        - Delete syndicate
+    - PUT  /api/settings                - Update global settings
+    - POST /api/upload/dd-report        - Upload DD report file
+    
+    See N8N_INTEGRATION_GUIDE.md for detailed setup instructions.
+    ============================================
+    -->
+    
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // ================== API CONFIGURATION ==================
+        // Set this to your n8n webhook base URL (update with your actual n8n URL)
+        const API_BASE_URL = 'https://kateg.app.n8n.cloud/webhook';
+        
+        // Toggle between mock data and real API
+        const USE_MOCK_DATA = false; // Set to false when connecting to n8n backend
+        
+        // n8n Webhook Endpoints (replace YOUR_N8N_INSTANCE with your actual instance)
+        const N8N_ENDPOINTS = {
+          ADD_DEAL: '/add-deal',
+          PRIORITIZE_SYNDICATES: '/prioritize-syndicates',
+          CALCULATE_RESERVATION: '/calculate-reservation',
+          ADD_SYNDICATE: '/add-syndicate'
+        };
+        
+        // API Helper Functions
+        const api = {
+          async get(endpoint) {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+            return response.json();
+          },
+          
+          async post(endpoint, data) {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data)
+            });
+            if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+            return response.json();
+          },
+          
+          async put(endpoint, data) {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(data)
+            });
+            if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+            return response.json();
+          },
+          
+          async delete(endpoint) {
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+            return response.json();
+          },
+          
+          async uploadFile(endpoint, file, metadata = {}) {
+            const formData = new FormData();
+            formData.append('file', file);
+            Object.keys(metadata).forEach(key => {
+              formData.append(key, metadata[key]);
+            });
+            
+            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+              method: 'POST',
+              body: formData
+            });
+            if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+            return response.json();
+          }
+        };
+
+        // ================== MOCK DATA GENERATION ==================
+        const generateMockData = () => {
+          const sponsorTeams = [
+            { id: 'blue', name: 'Blue Team', color: '#3B82F6' },
+            { id: 'green', name: 'Green Team', color: '#10B981' },
+            { id: 'red', name: 'Red Team', color: '#EF4444' },
+            { id: 'purple', name: 'Purple Team', color: '#8B5CF6' }
+          ];
+
+          const funds = [
+            { id: 'castor', name: 'Castor Fund' },
+            { id: 'pollux', name: 'Pollux Fund' },
+            { id: 'vega', name: 'Vega Fund' },
+            { id: 'sirius', name: 'Sirius Fund' }
+          ];
+
+          const syndicates = [
+            { 
+              id: 'foundation', 
+              name: 'AV Foundation', 
+              code: 'FOUND', 
+              description: 'Main foundation syndicate for general investments', 
+              type: 'standard',
+              mandate: 'General technology investments across all sectors',
+              associated_funds: ['castor', 'pollux'],
+              member_count: 1850, 
+              active_members: 1480, 
+              avg_reservation: 1200,
+              deals_sent_30d: 2,
+              members: generateMembers(1850)
+            },
+            { 
+              id: 'ai-first', 
+              name: 'AI-First Syndicate', 
+              code: 'FFAF', 
+              description: 'Focus on artificial intelligence and machine learning', 
+              type: 'standard',
+              mandate: 'AI, machine learning, LLMs, computer vision, NLP',
+              associated_funds: ['vega'],
+              member_count: 1000, 
+              active_members: 800, 
+              avg_reservation: 1000,
+              deals_sent_30d: 1,
+              members: generateMembers(1000)
+            },
+            { 
+              id: 'ai-robotics', 
+              name: 'AI & Robotics Syndicate', 
+              code: 'FFAI', 
+              description: 'AI and robotics innovations', 
+              type: 'standard',
+              mandate: 'AI, robotics, automation, autonomous systems',
+              associated_funds: ['vega'],
+              member_count: 1000, 
+              active_members: 800, 
+              avg_reservation: 1000,
+              deals_sent_30d: 2,
+              members: generateMembers(1000, 800) // 80% overlap with ai-first
+            },
+            { 
+              id: 'space', 
+              name: 'Space', 
+              code: 'SPACE', 
+              description: 'Focus on space technology and aerospace innovations', 
+              type: 'standard',
+              mandate: 'Space technology, satellites, aerospace, launch systems',
+              associated_funds: ['sirius'],
+              member_count: 425, 
+              active_members: 340, 
+              avg_reservation: 1500,
+              deals_sent_30d: 1,
+              members: generateMembers(425)
+            },
+            { 
+              id: 'climate', 
+              name: 'Climate Tech', 
+              code: 'CLIMA', 
+              description: 'Climate solutions, clean energy, and sustainability', 
+              type: 'standard',
+              mandate: 'Climate tech, clean energy, carbon capture, sustainability',
+              associated_funds: ['castor'],
+              member_count: 890, 
+              active_members: 712, 
+              avg_reservation: 1100,
+              deals_sent_30d: 3,
+              members: generateMembers(890)
+            },
+            { 
+              id: 'green-d', 
+              name: 'Green D Syndicate', 
+              code: 'GREEND', 
+              description: 'Dartmouth alumni network', 
+              type: 'standard',
+              mandate: 'Dartmouth-founded or led companies',
+              associated_funds: [],
+              member_count: 650, 
+              active_members: 520, 
+              avg_reservation: 900,
+              deals_sent_30d: 0,
+              members: generateMembers(650)
+            },
+            { 
+              id: 'harvard', 
+              name: 'Harvard', 
+              code: 'HARV', 
+              description: 'Harvard alumni network', 
+              type: 'standard',
+              mandate: 'Harvard-founded or led companies',
+              associated_funds: [],
+              member_count: 1420, 
+              active_members: 1136, 
+              avg_reservation: 950,
+              deals_sent_30d: 2,
+              members: generateMembers(1420)
+            },
+          ];
+
+          function generateMembers(count, overlapStart = 0) {
+            const members = [];
+            for (let i = 0; i < count; i++) {
+              const memberId = overlapStart + i;
+              members.push({
+                id: `member_${memberId}`,
+                name: `Member ${memberId}`,
+                email: `member${memberId}@example.com`,
+                deals_received_30d: Math.floor(Math.random() * 3),
+                frequency_preference: Math.random() > 0.95 ? 'None' : 'All',
+                unsubscribed: Math.random() > 0.98,
+                avg_reservation: 800 + Math.random() * 400
+              });
+            }
+            return members;
+          }
+
+          const deals = [
+            {
+              id: 'deal_1',
+              company_name: 'Reflect Orbital',
+              start_date: '2024-11-01',
+              end_date: '2024-11-15',
+              sponsor_team: 'blue',
+              target_reservation: 2500000,
+              actual_reservation: 1850000,
+              selected_syndicates: [
+                { id: 'space', priority: 1 },
+                { id: 'climate', priority: 2 },
+                { id: 'foundation', priority: 3 }
+              ],
+              stage: 'Series A',
+              sector: 'Space Tech',
+              geography: 'USA',
+              round_size: 10000000,
+              valuation: 50000000,
+              finalized: true,
+              dd_report: { 
+                summary: 'Reflect Orbital develops sunlight reflection technology for solar power generation. Strong technical team with aerospace background. Market validation through pilot programs.',
+                key_points: ['Space technology', 'Solar power', 'Climate impact'],
+                uploaded: true 
+              },
+              investment_detail: {
+                funds: ['sirius', 'castor'],
+                notes: 'Strategic investment in space infrastructure'
+              }
+            },
+            {
+              id: 'deal_2',
+              company_name: 'Boldvoice',
+              start_date: '2024-11-10',
+              end_date: '2024-11-30',
+              sponsor_team: 'green',
+              target_reservation: 3000000,
+              actual_reservation: null,
+              selected_syndicates: [
+                { id: 'ai-first', priority: 1 },
+                { id: 'harvard', priority: 2 }
+              ],
+              stage: 'Series B',
+              sector: 'AI/EdTech',
+              geography: 'USA',
+              round_size: 15000000,
+              valuation: 75000000,
+              finalized: false,
+              dd_report: { 
+                summary: 'Boldvoice uses AI for accent coaching and English language learning. Founded by Harvard alumna. Strong user growth and engagement metrics.',
+                key_points: ['AI/ML', 'EdTech', 'Harvard founder'],
+                uploaded: true 
+              },
+              investment_detail: {
+                funds: ['vega'],
+                notes: 'AI-powered education platform'
+              }
+            },
+          ];
+
+          const globalSettings = {
+            show_multiple_deals: true,
+            max_deals_per_individual_30d: 5,
+            max_deals_per_syndicate_30d: 3,
+            max_concurrent_deals_per_syndicate: 1
+          };
+
+          return { sponsorTeams, syndicates, deals, globalSettings, funds };
+        };
+
+        // ================== AI PRIORITIZATION LOGIC ==================
+        const calculateSyndicatePriority = (syndicate, deal, allDeals, globalSettings) => {
+          let score = 0;
+          let reasons = [];
+          let atMaxDeals = false;
+
+          // Check if syndicate is already at max deals - don't exclude, just flag it
+          if (syndicate.deals_sent_30d >= globalSettings.max_deals_per_syndicate_30d) {
+            atMaxDeals = true;
+            score -= 500; // Lower priority but still selectable
+            reasons.push(`⚠️ At max deals: ${syndicate.deals_sent_30d}/${globalSettings.max_deals_per_syndicate_30d} (30d)`);
+          }
+
+          // Check concurrent deals constraint - only consider OTHER locked deals
+          if (globalSettings.max_concurrent_deals_per_syndicate === 1) {
+            const concurrentDeals = allDeals.filter(d => 
+              d.id !== deal.id &&
+              d.locked &&  // Changed from finalized to locked
+              new Date(d.start_date) <= new Date(deal.end_date) &&
+              new Date(d.end_date) >= new Date(deal.start_date) &&
+              d.selected_syndicates.some(s => s.id === syndicate.id)
+            );
+            if (concurrentDeals.length > 0) {
+              return { score: -1000, reasons: ['Syndicate locked in concurrent deal'], excluded: true, atMaxDeals: false };
+            }
+          }
+
+          // Mandate fit (AI-powered matching)
+          if (deal.dd_report && deal.dd_report.summary) {
+            const mandateScore = calculateMandateFit(syndicate.mandate, deal.dd_report.summary, deal.dd_report.key_points);
+            score += mandateScore;
+            if (mandateScore > 0) {
+              reasons.push(`Mandate fit (${mandateScore} pts)`);
+            }
+          }
+
+          // Fewer recent deals = higher priority
+          const dealFrequencyBonus = (3 - syndicate.deals_sent_30d) * 10;
+          score += dealFrequencyBonus;
+          if (!atMaxDeals) {
+            reasons.push(`${syndicate.deals_sent_30d} deals in 30d (+${dealFrequencyBonus})`);
+          }
+
+          return { score, reasons, excluded: false, atMaxDeals };
+        };
+
+        const calculateMandateFit = (mandate, summary, keyPoints) => {
+          let score = 0;
+          const mandateLower = mandate.toLowerCase();
+          const summaryLower = summary.toLowerCase();
+          const keyPointsLower = keyPoints ? keyPoints.map(k => k.toLowerCase()) : [];
+
+          // Simple keyword matching (in real version, this would use Claude API)
+          const keywords = {
+            'ai': ['ai', 'artificial intelligence', 'machine learning', 'ml', 'llm', 'nlp', 'computer vision'],
+            'space': ['space', 'satellite', 'aerospace', 'launch', 'orbital'],
+            'climate': ['climate', 'clean energy', 'carbon', 'sustainability', 'solar', 'renewable'],
+            'robotics': ['robot', 'automation', 'autonomous'],
+            'harvard': ['harvard'],
+            'dartmouth': ['dartmouth']
+          };
+
+          for (const [category, terms] of Object.entries(keywords)) {
+            if (mandateLower.includes(category)) {
+              for (const term of terms) {
+                if (summaryLower.includes(term) || keyPointsLower.some(kp => kp.includes(term))) {
+                  score += 40;
+                  break;
+                }
+              }
+            }
+          }
+
+          return score;
+        };
+
+        // ================== RECIPIENT & RESERVATION CALCULATIONS ==================
+        const calculateSyndicateMetrics = (syndicate, selectedSyndicates, allSyndicates, globalSettings) => {
+          // Get all members who should be excluded
+          const excludedMemberIds = new Set();
+          
+          // Add members from already selected syndicates to track overlap
+          const selectedMemberIds = new Set();
+          selectedSyndicates.forEach(selSyndId => {
+            const selSynd = allSyndicates.find(s => s.id === selSyndId);
+            if (selSynd && selSynd.members) {
+              selSynd.members.forEach(m => selectedMemberIds.add(m.id));
+            }
+          });
+
+          // Filter eligible members from this syndicate
+          const eligibleMembers = syndicate.members.filter(member => {
+            // Check individual constraints
+            if (member.deals_received_30d >= globalSettings.max_deals_per_individual_30d) {
+              excludedMemberIds.add(member.id);
+              return false;
+            }
+            if (member.unsubscribed || member.frequency_preference === 'None') {
+              excludedMemberIds.add(member.id);
+              return false;
+            }
+            return true;
+          });
+
+          // Calculate incremental additions (not already in selected syndicates)
+          const incrementalMembers = eligibleMembers.filter(m => !selectedMemberIds.has(m.id));
+          
+          // Calculate reservations
+          const totalEligible = eligibleMembers.length;
+          const incrementalCount = incrementalMembers.length;
+          const totalReservation = eligibleMembers.reduce((sum, m) => sum + m.avg_reservation, 0);
+          const incrementalReservation = incrementalMembers.reduce((sum, m) => sum + m.avg_reservation, 0);
+
+          return {
+            totalEligible,
+            incrementalCount,
+            totalReservation,
+            incrementalReservation,
+            overlapCount: totalEligible - incrementalCount
+          };
+        };
+
+        // ================== MAIN APP COMPONENT ==================
+        const App = () => {
+          const [activeTab, setActiveTab] = useState('deals');
+          const [data, setData] = useState(null);
+          const [loading, setLoading] = useState(false);
+          const [error, setError] = useState(null);
+          const [editingDeal, setEditingDeal] = useState(null);
+          const [creatingDeal, setCreatingDeal] = useState(false);
+          const [editingSyndicate, setEditingSyndicate] = useState(null);
+          const [viewingMembers, setViewingMembers] = useState(null);
+
+          // Load initial data
+          useEffect(() => {
+            const loadData = async () => {
+              setLoading(true);
+              setError(null);
+              try {
+                if (USE_MOCK_DATA) {
+                  setData(generateMockData());
+                } else {
+                  const response = await api.get('/api/data');
+                  setData(response);
+                }
+              } catch (err) {
+                setError(err.message);
+                console.error('Failed to load data:', err);
+              } finally {
+                setLoading(false);
+              }
+            };
+            loadData();
+          }, []);
+
+          if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>;
+          if (error) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-red-600">Error: {error}</div>;
+          if (!data) return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>;
+
+          const handleAddDeal = async (newDeal) => {
+            try {
+              if (USE_MOCK_DATA) {
+                setData({ ...data, deals: [...data.deals, newDeal] });
+              } else {
+                const createdDeal = await api.post('/api/deals', newDeal);
+                setData({ ...data, deals: [...data.deals, createdDeal] });
+              }
+              setCreatingDeal(false);
+            } catch (err) {
+              alert('Failed to create deal: ' + err.message);
+            }
+          };
+
+          const handleUpdateDeal = async (updatedDeal) => {
+            try {
+              if (USE_MOCK_DATA) {
+                const updatedDeals = data.deals.map(d => d.id === updatedDeal.id ? updatedDeal : d);
+                setData({ ...data, deals: updatedDeals });
+              } else {
+                const updated = await api.put(`/api/deals/${updatedDeal.id}`, updatedDeal);
+                const updatedDeals = data.deals.map(d => d.id === updated.id ? updated : d);
+                setData({ ...data, deals: updatedDeals });
+              }
+            } catch (err) {
+              alert('Failed to update deal: ' + err.message);
+            }
+          };
+
+          const handleDeleteDeal = async (dealId) => {
+            if (!window.confirm('Are you sure you want to delete this deal?')) return;
+            try {
+              if (USE_MOCK_DATA) {
+                const updatedDeals = data.deals.filter(d => d.id !== dealId);
+                setData({ ...data, deals: updatedDeals });
+              } else {
+                await api.delete(`/api/deals/${dealId}`);
+                const updatedDeals = data.deals.filter(d => d.id !== dealId);
+                setData({ ...data, deals: updatedDeals });
+              }
+            } catch (err) {
+              alert('Failed to delete deal: ' + err.message);
+            }
+          };
+
+          const handleUpdateSyndicate = async (updatedSyndicate) => {
+            try {
+              if (USE_MOCK_DATA) {
+                const updatedSyndicates = data.syndicates.map(s => s.id === updatedSyndicate.id ? updatedSyndicate : s);
+                setData({ ...data, syndicates: updatedSyndicates });
+              } else {
+                const updated = await api.put(`/api/syndicates/${updatedSyndicate.id}`, updatedSyndicate);
+                const updatedSyndicates = data.syndicates.map(s => s.id === updated.id ? updated : s);
+                setData({ ...data, syndicates: updatedSyndicates });
+              }
+            } catch (err) {
+              alert('Failed to update syndicate: ' + err.message);
+            }
+          };
+
+          const handleDeleteSyndicate = async (syndicateId) => {
+            if (!window.confirm('Are you sure you want to delete this syndicate?')) return;
+            try {
+              if (USE_MOCK_DATA) {
+                const updatedSyndicates = data.syndicates.filter(s => s.id !== syndicateId);
+                setData({ ...data, syndicates: updatedSyndicates });
+              } else {
+                await api.delete(`/api/syndicates/${syndicateId}`);
+                const updatedSyndicates = data.syndicates.filter(s => s.id !== syndicateId);
+                setData({ ...data, syndicates: updatedSyndicates });
+              }
+            } catch (err) {
+              alert('Failed to delete syndicate: ' + err.message);
+            }
+          };
+
+          const handleAddSyndicate = async (newSyndicate) => {
+            try {
+              if (USE_MOCK_DATA) {
+                setData({ ...data, syndicates: [...data.syndicates, newSyndicate] });
+              } else {
+                const created = await api.post('/api/syndicates', newSyndicate);
+                setData({ ...data, syndicates: [...data.syndicates, created] });
+              }
+            } catch (err) {
+              alert('Failed to create syndicate: ' + err.message);
+            }
+          };
+
+          const handleUpdateSettings = async (newSettings) => {
+            try {
+              if (USE_MOCK_DATA) {
+                setData({ ...data, globalSettings: newSettings });
+              } else {
+                const updated = await api.put('/api/settings', newSettings);
+                setData({ ...data, globalSettings: updated });
+              }
+            } catch (err) {
+              alert('Failed to update settings: ' + err.message);
+            }
+          };
+
+          return (
+            <div className="min-h-screen bg-gray-50">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div className="mb-8">
+                  <h1 className="text-3xl font-bold text-gray-900">AV Syndicate Manager</h1>
+                  <p className="mt-2 text-sm text-gray-600">Manage syndication deals and syndicate lists</p>
+                </div>
+
+                <div className="border-b border-gray-200 mb-6">
+                  <nav className="-mb-px flex space-x-8">
+                    {['deals', 'syndicates', 'controls', 'emails'].map(tab => (
+                      <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        className={`${
+                          activeTab === tab
+                            ? 'border-blue-500 text-blue-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm capitalize`}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                  </nav>
+                </div>
+
+                <div className="mt-6">
+                  {activeTab === 'deals' && (
+                    <DealsManagement
+                      deals={data.deals}
+                      syndicates={data.syndicates}
+                      sponsorTeams={data.sponsorTeams}
+                      funds={data.funds}
+                      globalSettings={data.globalSettings}
+                      allDeals={data.deals}
+                      onAddDeal={() => setCreatingDeal(true)}
+                      onUpdateDeal={handleUpdateDeal}
+                      onDeleteDeal={handleDeleteDeal}
+                    />
+                  )}
+                  {activeTab === 'syndicates' && (
+                    <SyndicatesManagement
+                      syndicates={data.syndicates}
+                      funds={data.funds}
+                      onAddSyndicate={() => setEditingSyndicate({ isNew: true })}
+                      onEditSyndicate={setEditingSyndicate}
+                      onDeleteSyndicate={handleDeleteSyndicate}
+                      onViewMembers={setViewingMembers}
+                    />
+                  )}
+                  {activeTab === 'controls' && (
+                    <GlobalControls
+                      settings={data.globalSettings}
+                      onUpdateSettings={handleUpdateSettings}
+                    />
+                  )}
+                  {activeTab === 'emails' && <EmailGeneration />}
+                </div>
+              </div>
+
+              {creatingDeal && (
+                <CreateDealModal
+                  funds={data.funds}
+                  sponsorTeams={data.sponsorTeams}
+                  onClose={() => setCreatingDeal(false)}
+                  onSave={handleAddDeal}
+                />
+              )}
+
+              {editingSyndicate && (
+                <EditSyndicateModal
+                  syndicate={editingSyndicate}
+                  funds={data.funds}
+                  onClose={() => setEditingSyndicate(null)}
+                  onSave={(syndicate) => {
+                    if (editingSyndicate.isNew) {
+                      handleAddSyndicate(syndicate);
+                    } else {
+                      handleUpdateSyndicate(syndicate);
+                    }
+                    setEditingSyndicate(null);
+                  }}
+                />
+              )}
+
+              {viewingMembers && (
+                <ViewMembersModal
+                  syndicate={viewingMembers}
+                  onClose={() => setViewingMembers(null)}
+                  onSave={(updatedSyndicate) => {
+                    handleUpdateSyndicate(updatedSyndicate);
+                    setViewingMembers(null);
+                  }}
+                />
+              )}
+            </div>
+          );
+        };
+
+        // ================== DEAL DETAILS MODAL ==================
+        const DealDetailsModal = ({ deal, syndicates, sponsorTeams, funds, globalSettings, allDeals, onClose, onUpdateDeal, onDeleteDeal }) => {
+          const [activeTab, setActiveTab] = useState('details');
+          const [editMode, setEditMode] = useState(false);
+          const [formData, setFormData] = useState({ ...deal });
+
+          const handleSaveDetails = () => {
+            onUpdateDeal(formData);
+            setEditMode(false);
+          };
+
+          return (
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                {/* Header */}
+                <div className="flex justify-between items-center p-6 border-b">
+                  <h3 className="text-xl font-semibold">{deal.company_name}</h3>
+                  <button
+                    onClick={onClose}
+                    className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/* Tabs */}
+                <div className="border-b px-6">
+                  <nav className="-mb-px flex space-x-8">
+                    <button
+                      onClick={() => setActiveTab('details')}
+                      className={`${
+                        activeTab === 'details'
+                          ? 'border-blue-500 text-blue-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                    >
+                      Deal Details
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('syndicates')}
+                      className={`${
+                        activeTab === 'syndicates'
+                          ? 'border-blue-500 text-blue-600'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                    >
+                      Syndicate Selection
+                    </button>
+                  </nav>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-6">
+                  {activeTab === 'details' ? (
+                    <div className="space-y-6">
+                      <div className="flex justify-end">
+                        {editMode ? (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setFormData({ ...deal });
+                                setEditMode(false);
+                              }}
+                              className="px-4 py-2 border rounded hover:bg-gray-50"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleSaveDetails}
+                              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
+                              Save Changes
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setEditMode(true)}
+                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                          >
+                            Edit Details
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                          {editMode ? (
+                            <input
+                              type="text"
+                              value={formData.company_name}
+                              onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                              className="w-full border rounded px-3 py-2"
+                            />
+                          ) : (
+                            <p className="text-gray-900">{deal.company_name}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Sponsor Team</label>
+                          {editMode ? (
+                            <select
+                              value={formData.sponsor_team}
+                              onChange={(e) => setFormData({ ...formData, sponsor_team: e.target.value })}
+                              className="w-full border rounded px-3 py-2"
+                            >
+                              <option value="">Select team...</option>
+                              {sponsorTeams.map(team => (
+                                <option key={team.id} value={team.id}>{team.name}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <p className="text-gray-900">
+                              {sponsorTeams.find(t => t.id === deal.sponsor_team)?.name || '-'}
+                            </p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                          {editMode ? (
+                            <input
+                              type="date"
+                              value={formData.start_date}
+                              onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                              className="w-full border rounded px-3 py-2"
+                            />
+                          ) : (
+                            <p className="text-gray-900">{deal.start_date}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                          {editMode ? (
+                            <input
+                              type="date"
+                              value={formData.end_date}
+                              onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                              className="w-full border rounded px-3 py-2"
+                            />
+                          ) : (
+                            <p className="text-gray-900">{deal.end_date}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Stage</label>
+                          {editMode ? (
+                            <input
+                              type="text"
+                              value={formData.stage}
+                              onChange={(e) => setFormData({ ...formData, stage: e.target.value })}
+                              className="w-full border rounded px-3 py-2"
+                            />
+                          ) : (
+                            <p className="text-gray-900">{deal.stage || '-'}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Sector</label>
+                          {editMode ? (
+                            <input
+                              type="text"
+                              value={formData.sector}
+                              onChange={(e) => setFormData({ ...formData, sector: e.target.value })}
+                              className="w-full border rounded px-3 py-2"
+                            />
+                          ) : (
+                            <p className="text-gray-900">{deal.sector || '-'}</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Target Reservation</label>
+                          {editMode ? (
+                            <input
+                              type="number"
+                              value={formData.target_reservation}
+                              onChange={(e) => setFormData({ ...formData, target_reservation: parseInt(e.target.value) })}
+                              className="w-full border rounded px-3 py-2"
+                            />
+                          ) : (
+                            <p className="text-gray-900">${(deal.target_reservation / 1000000).toFixed(1)}M</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Predicted Reservation</label>
+                          {editMode ? (
+                            <input
+                              type="number"
+                              value={formData.actual_reservation || ''}
+                              onChange={(e) => setFormData({ ...formData, actual_reservation: e.target.value ? parseInt(e.target.value) : null })}
+                              className="w-full border rounded px-3 py-2"
+                            />
+                          ) : (
+                            <p className="text-gray-900">
+                              {deal.actual_reservation ? `$${(deal.actual_reservation / 1000000).toFixed(1)}M` : 'TBD'}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">DD Report</label>
+                        {editMode ? (
+                          <div className="space-y-2">
+                            <textarea
+                              value={formData.dd_report?.summary || ''}
+                              onChange={(e) => setFormData({
+                                ...formData,
+                                dd_report: { ...formData.dd_report, summary: e.target.value, uploaded: e.target.value.length > 0 }
+                              })}
+                              className="w-full border rounded px-3 py-2"
+                              rows="4"
+                              placeholder="Enter DD summary or upload a new file..."
+                            />
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx,.txt"
+                              onChange={(e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                  // In real implementation, this would upload to backend
+                                  setFormData({
+                                    ...formData,
+                                    dd_report: { 
+                                      ...formData.dd_report, 
+                                      summary: `${formData.dd_report?.summary || ''}\n[New file uploaded: ${file.name}]`,
+                                      uploaded: true 
+                                    }
+                                  });
+                                }
+                              }}
+                              className="w-full border rounded px-3 py-2 text-sm"
+                            />
+                            <p className="text-xs text-gray-500">Upload a new DD report file or edit the summary above</p>
+                          </div>
+                        ) : (
+                          <div className="p-3 bg-blue-50 rounded">
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {deal.dd_report?.summary || 'No DD report uploaded'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                        {editMode ? (
+                          <textarea
+                            value={formData.notes || ''}
+                            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                            className="w-full border rounded px-3 py-2"
+                            rows="4"
+                            placeholder="Add any additional notes about this deal..."
+                          />
+                        ) : (
+                          <div className="p-3 bg-gray-50 rounded min-h-[100px]">
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                              {deal.notes || 'No notes added'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-4 border-t">
+                        <button
+                          onClick={() => {
+                            if (window.confirm('Are you sure you want to delete this deal?')) {
+                              onDeleteDeal(deal.id);
+                              onClose();
+                            }
+                          }}
+                          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                        >
+                          Delete Deal
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <SelectSyndicatesContent
+                      deal={deal}
+                      syndicates={syndicates}
+                      allDeals={allDeals}
+                      globalSettings={globalSettings}
+                      onSave={(updatedDeal) => {
+                        onUpdateDeal(updatedDeal);
+                        onClose();
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        // ================== SELECT SYNDICATES CONTENT (for use in modal tab) ==================
+        const SelectSyndicatesContent = ({ deal, syndicates, allDeals, globalSettings, onSave }) => {
+          // Filter out any syndicates that are excluded (e.g., at max deals)
+          const validSelectedSyndicates = deal.selected_syndicates
+            .map(s => s.id)
+            .filter(synId => {
+              const syndicate = syndicates.find(syn => syn.id === synId);
+              if (!syndicate) return false;
+              const priority = calculateSyndicatePriority(syndicate, deal, allDeals, globalSettings);
+              return !priority.excluded;
+            });
+          
+          const [selectedSyndicates, setSelectedSyndicates] = useState(validSelectedSyndicates);
+          const [priorities, setPriorities] = useState(
+            deal.selected_syndicates
+              .filter(s => validSelectedSyndicates.includes(s.id))
+              .reduce((acc, s) => ({ ...acc, [s.id]: s.priority }), {})
+          );
+
+          // Calculate priorities for all syndicates
+          const syndicateScores = syndicates.map(syndicate => {
+            const priority = calculateSyndicatePriority(syndicate, deal, allDeals, globalSettings);
+            
+            // When calculating metrics for a syndicate, we need to consider only syndicates
+            // with HIGHER priority (lower priority number) than this one
+            // This ensures members are "claimed" by the highest priority syndicate they belong to
+            const currentPriority = priorities[syndicate.id] || 999;
+            const higherPrioritySelected = selectedSyndicates.filter(id => {
+              const otherPriority = priorities[id] || 999;
+              return id !== syndicate.id && otherPriority < currentPriority;
+            });
+            
+            const metrics = calculateSyndicateMetrics(
+              syndicate,
+              higherPrioritySelected,
+              syndicates,
+              globalSettings
+            );
+            return { syndicate, priority, metrics };
+          });
+
+          // Sort by score (highest first), but keep excluded ones at the bottom
+          const sortedSyndicates = syndicateScores.sort((a, b) => {
+            if (a.priority.excluded && !b.priority.excluded) return 1;
+            if (!a.priority.excluded && b.priority.excluded) return -1;
+            return b.priority.score - a.priority.score;
+          });
+
+          // Calculate running totals
+          const totals = selectedSyndicates.reduce((acc, synId) => {
+            const synData = syndicateScores.find(s => s.syndicate.id === synId);
+            if (synData) {
+              return {
+                recipients: acc.recipients + synData.metrics.incrementalCount,
+                reservation: acc.reservation + synData.metrics.incrementalReservation
+              };
+            }
+            return acc;
+          }, { recipients: 0, reservation: 0 });
+
+          const handleToggleSyndicate = (syndicateId) => {
+            if (selectedSyndicates.includes(syndicateId)) {
+              setSelectedSyndicates(selectedSyndicates.filter(id => id !== syndicateId));
+              const newPriorities = { ...priorities };
+              delete newPriorities[syndicateId];
+              setPriorities(newPriorities);
+            } else {
+              setSelectedSyndicates([...selectedSyndicates, syndicateId]);
+              setPriorities({ ...priorities, [syndicateId]: selectedSyndicates.length + 1 });
+            }
+          };
+
+          const handleSave = () => {
+            const updatedDeal = {
+              ...deal,
+              selected_syndicates: selectedSyndicates.map(id => ({
+                id,
+                priority: priorities[id] || 999
+              })).sort((a, b) => a.priority - b.priority)
+            };
+            onSave(updatedDeal);
+          };
+
+          const handleDownloadUserList = () => {
+            // Collect all unique user IDs from selected syndicates
+            const allUserIds = new Set();
+            selectedSyndicates.forEach(synId => {
+              const syndicate = syndicates.find(s => s.id === synId);
+              if (syndicate && syndicate.members) {
+                syndicate.members.forEach(member => {
+                  allUserIds.add(member.id);
+                });
+              }
+            });
+
+            // Create CSV content
+            const csvContent = 'User ID\n' + Array.from(allUserIds).join('\n');
+            
+            // Create blob and download
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${deal.company_name.replace(/\s+/g, '_')}_user_ids.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+          };
+
+          return (
+            <div>
+              <div className="sticky top-0 bg-white z-10 pb-4 -mt-6 pt-6">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <div className="grid grid-cols-4 gap-4 text-center mb-4">
+                    <div>
+                      <div className="text-2xl font-bold text-blue-900">{selectedSyndicates.length}</div>
+                      <div className="text-sm text-gray-600">Syndicates Selected</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-blue-900">{totals.recipients.toLocaleString()}</div>
+                      <div className="text-sm text-gray-600">Total Recipients</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-blue-900">
+                        ${(totals.reservation / 1000000).toFixed(2)}M
+                      </div>
+                      <div className="text-sm text-gray-600">Expected Reservation</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-green-900">
+                        ${(deal.target_reservation / 1000000).toFixed(2)}M
+                      </div>
+                      <div className="text-sm text-gray-600">Goal Reservation</div>
+                    </div>
+                  </div>
+                  
+                  {selectedSyndicates.length > 0 && (
+                    <div className="border-t border-blue-200 pt-3">
+                      <div className="text-xs font-medium text-gray-600 mb-2">Selected Syndicates (by priority):</div>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedSyndicates
+                          .map(synId => ({
+                            id: synId,
+                            name: syndicates.find(s => s.id === synId)?.name,
+                            priority: priorities[synId] || 999
+                          }))
+                          .sort((a, b) => a.priority - b.priority)
+                          .map(({ id, name, priority }) => (
+                            <span
+                              key={id}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs"
+                            >
+                              <span className="font-semibold">{priority}.</span>
+                              {name}
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3 mb-6">
+                {sortedSyndicates.map(({ syndicate, priority, metrics }) => {
+                  const isSelected = selectedSyndicates.includes(syndicate.id);
+                  const isExcluded = priority.excluded;
+                  const atMaxDeals = priority.atMaxDeals;
+
+                  return (
+                    <div
+                      key={syndicate.id}
+                      className={`border rounded-lg p-4 ${
+                        isExcluded ? 'bg-gray-50 opacity-60' : atMaxDeals ? 'bg-yellow-50 border-yellow-300' : 'bg-white'
+                      } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              disabled={isExcluded}
+                              onChange={() => handleToggleSyndicate(syndicate.id)}
+                              className="w-5 h-5"
+                            />
+                            <div>
+                              <div className="font-medium text-gray-900">{syndicate.name}</div>
+                              <div className="text-sm text-gray-500">{syndicate.code}</div>
+                            </div>
+                          </div>
+
+                          {!isExcluded && (
+                            <div className="ml-8 grid grid-cols-3 gap-3 mb-2">
+                              <div className="bg-gray-50 rounded p-2">
+                                <div className="text-xs text-gray-500">Total Eligible</div>
+                                <div className="text-lg font-semibold">{metrics.totalEligible}</div>
+                              </div>
+                              <div className="bg-gray-50 rounded p-2">
+                                <div className="text-xs text-gray-500">Incremental</div>
+                                <div className="text-lg font-semibold text-blue-600">+{metrics.incrementalCount}</div>
+                              </div>
+                              <div className="bg-gray-50 rounded p-2">
+                                <div className="text-xs text-gray-500">Incremental $</div>
+                                <div className="text-lg font-semibold text-green-600">
+                                  +${(metrics.incrementalReservation / 1000).toFixed(0)}K
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="ml-8 mt-3">
+                            {priority.reasons.map((reason, idx) => (
+                              <div key={idx} className="text-xs text-gray-600 flex items-center gap-2">
+                                <span className={isExcluded ? 'text-red-600' : atMaxDeals ? 'text-yellow-600' : 'text-blue-600'}>
+                                  {isExcluded ? '✗' : atMaxDeals ? '⚠' : '✓'}
+                                </span>
+                                {reason}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {isSelected && !isExcluded && (
+                          <div className="ml-4">
+                            <label className="text-xs text-gray-500">Priority</label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={priorities[syndicate.id] || ''}
+                              onChange={(e) => {
+                                const newPriority = parseInt(e.target.value);
+                                // Check if this priority is already used by another syndicate
+                                const duplicateSyndicate = Object.entries(priorities).find(
+                                  ([id, priority]) => id !== syndicate.id && priority === newPriority
+                                );
+                                if (duplicateSyndicate) {
+                                  alert(`Priority ${newPriority} is already assigned to another syndicate. Please choose a different priority.`);
+                                  return;
+                                }
+                                setPriorities({ ...priorities, [syndicate.id]: newPriority });
+                              }}
+                              className="w-16 border rounded px-2 py-1 text-sm"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-between items-center">
+                <button
+                  onClick={handleDownloadUserList}
+                  disabled={selectedSyndicates.length === 0}
+                  className={`px-4 py-2 rounded flex items-center gap-2 ${
+                    selectedSyndicates.length === 0
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  ⬇️ Download User List
+                </button>
+                <button
+                  onClick={handleSave}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Save Selection
+                </button>
+              </div>
+            </div>
+          );
+        };
+
+        // ================== DEALS MANAGEMENT (TABLE VIEW) ==================
+        const DealsManagement = ({ deals, syndicates, sponsorTeams, funds, globalSettings, allDeals, onAddDeal, onUpdateDeal, onDeleteDeal }) => {
+          const [selectedDeal, setSelectedDeal] = useState(null);
+          
+          // Sort deals by start date (most recent first)
+          const sortedDeals = [...deals].sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+
+          return (
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">Deals</h2>
+                <button
+                  onClick={onAddDeal}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+                >
+                  <span>+</span> Add New Deal
+                </button>
+              </div>
+
+              <div className="bg-white shadow-sm rounded-lg overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Company
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Start Date
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          End Date
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Stage
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Sector
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Team
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Target
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Predicted
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Syndicates
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {sortedDeals.map(deal => {
+                        const team = sponsorTeams.find(t => t.id === deal.sponsor_team);
+                        const selectedSyndCount = deal.selected_syndicates.length;
+
+                        return (
+                          <tr
+                            key={deal.id}
+                            onClick={() => setSelectedDeal(deal)}
+                            className="hover:bg-gray-50 cursor-pointer"
+                          >
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm font-medium text-gray-900">{deal.company_name}</div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{deal.start_date}</div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{deal.end_date}</div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{deal.stage || '-'}</div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">{deal.sector || '-'}</div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              {team && (
+                                <span
+                                  className="text-xs px-2 py-1 rounded"
+                                  style={{ backgroundColor: team.color + '20', color: team.color }}
+                                >
+                                  {team.name}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">
+                                ${(deal.target_reservation / 1000000).toFixed(1)}M
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">
+                                {deal.actual_reservation ? `$${(deal.actual_reservation / 1000000).toFixed(1)}M` : 'TBD'}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-sm text-gray-500">
+                                {selectedSyndCount > 0 ? `${selectedSyndCount} selected` : 'None'}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                {deal.locked && (
+                                  <span className="text-xs px-2 py-1 rounded bg-green-50 text-green-700">
+                                    🔒 Locked
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onUpdateDeal({ ...deal, locked: !deal.locked });
+                                }}
+                                className="text-sm text-blue-600 hover:text-blue-900"
+                                title={deal.locked ? 'Unlock' : 'Lock'}
+                              >
+                                {deal.locked ? '🔓' : '🔒'}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {selectedDeal && (
+                <DealDetailsModal
+                  deal={selectedDeal}
+                  syndicates={syndicates}
+                  sponsorTeams={sponsorTeams}
+                  funds={funds}
+                  globalSettings={globalSettings}
+                  allDeals={allDeals}
+                  onClose={() => setSelectedDeal(null)}
+                  onUpdateDeal={(updatedDeal) => {
+                    onUpdateDeal(updatedDeal);
+                    setSelectedDeal(updatedDeal);
+                  }}
+                  onDeleteDeal={onDeleteDeal}
+                />
+              )}
+            </div>
+          );
+        };
+
+        // ================== CREATE DEAL MODAL ==================
+        const CreateDealModal = ({ funds, sponsorTeams, onClose, onSave }) => {
+          const [formData, setFormData] = useState({
+            company_name: '',
+            start_date: '',
+            end_date: '',
+            sponsor_team: '',
+            target_reservation: '',
+            stage: '',
+            sector: '',
+            geography: 'USA',
+            round_size: '',
+            valuation: '',
+            dd_summary: '',
+            dd_file: null,
+            notes: ''
+          });
+
+          const handleSubmit = async () => {
+            if (!formData.company_name || !formData.start_date || !formData.end_date || !formData.target_reservation) {
+              alert('Please fill in all required fields');
+              return;
+            }
+
+            try {
+              let ddReport = {
+                summary: formData.dd_summary,
+                uploaded: formData.dd_summary.length > 0
+              };
+
+              // If file is uploaded and not in mock mode, upload it to n8n
+              if (formData.dd_file && !USE_MOCK_DATA) {
+                const uploadResult = await api.uploadFile('/api/upload/dd-report', formData.dd_file, {
+                  company_name: formData.company_name
+                });
+                ddReport = {
+                  summary: uploadResult.summary || formData.dd_summary,
+                  file_url: uploadResult.file_url,
+                  uploaded: true
+                };
+              }
+
+              const newDeal = {
+                id: `deal_${Date.now()}`,
+                company_name: formData.company_name,
+                start_date: formData.start_date,
+                end_date: formData.end_date,
+                sponsor_team: formData.sponsor_team,
+                target_reservation: parseInt(formData.target_reservation),
+                actual_reservation: null,
+                selected_syndicates: [],
+                stage: formData.stage,
+                sector: formData.sector,
+                geography: formData.geography,
+                round_size: formData.round_size ? parseInt(formData.round_size) : null,
+                valuation: formData.valuation ? parseInt(formData.valuation) : null,
+                locked: false,
+                dd_report: ddReport,
+                notes: formData.notes || ''
+              };
+
+              onSave(newDeal);
+            } catch (err) {
+              alert('Failed to create deal: ' + err.message);
+            }
+          };
+
+          return (
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-lg max-w-3xl w-full p-6 max-h-[90vh] overflow-y-auto">
+                <h3 className="text-lg font-medium mb-4">Add New Syndication Deal</h3>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Company Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.company_name}
+                      onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                      className="w-full border rounded px-3 py-2"
+                      placeholder="e.g., Acme Corp"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Start Date *
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.start_date}
+                        onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        End Date *
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.end_date}
+                        onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Target Reservation Amount ($) *
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.target_reservation}
+                      onChange={(e) => setFormData({ ...formData, target_reservation: e.target.value })}
+                      className="w-full border rounded px-3 py-2"
+                      placeholder="e.g., 2500000"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Stage</label>
+                      <input
+                        type="text"
+                        value={formData.stage}
+                        onChange={(e) => setFormData({ ...formData, stage: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                        placeholder="e.g., Series A"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Sector</label>
+                      <input
+                        type="text"
+                        value={formData.sector}
+                        onChange={(e) => setFormData({ ...formData, sector: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                        placeholder="e.g., AI/ML"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Sponsor Team
+                    </label>
+                    <select
+                      value={formData.sponsor_team}
+                      onChange={(e) => setFormData({ ...formData, sponsor_team: e.target.value })}
+                      className="w-full border rounded px-3 py-2"
+                    >
+                      <option value="">Select team...</option>
+                      {sponsorTeams.map(team => (
+                        <option key={team.id} value={team.id}>{team.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <h4 className="font-medium text-gray-900 mb-3">DD Report</h4>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Upload DD Report
+                      </label>
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx,.txt"
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            setFormData({ ...formData, dd_file: file, dd_summary: `Uploaded: ${file.name}` });
+                          }
+                        }}
+                        className="w-full border rounded px-3 py-2"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Accepted formats: PDF, DOC, DOCX, TXT
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <h4 className="font-medium text-gray-900 mb-3">Notes</h4>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Additional Notes
+                      </label>
+                      <textarea
+                        value={formData.notes}
+                        onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                        rows="4"
+                        placeholder="Add any additional notes about this deal..."
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    onClick={onClose}
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSubmit}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Create Deal
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        // ================== SELECT SYNDICATES MODAL ==================
+        const SelectSyndicatesModal = ({ deal, syndicates, allDeals, globalSettings, onClose, onSave }) => {
+          // Filter out any syndicates that are excluded (e.g., at max deals)
+          const validSelectedSyndicates = deal.selected_syndicates
+            .map(s => s.id)
+            .filter(synId => {
+              const syndicate = syndicates.find(syn => syn.id === synId);
+              if (!syndicate) return false;
+              const priority = calculateSyndicatePriority(syndicate, deal, allDeals, globalSettings);
+              return !priority.excluded;
+            });
+          
+          const [selectedSyndicates, setSelectedSyndicates] = useState(validSelectedSyndicates);
+          const [priorities, setPriorities] = useState(
+            deal.selected_syndicates
+              .filter(s => validSelectedSyndicates.includes(s.id))
+              .reduce((acc, s) => ({ ...acc, [s.id]: s.priority }), {})
+          );
+
+          // Calculate priorities for all syndicates
+          const syndicateScores = syndicates.map(syndicate => {
+            const priority = calculateSyndicatePriority(syndicate, deal, allDeals, globalSettings);
+            // When calculating metrics for a syndicate, exclude it from the selected list
+            // so we see its actual contribution, not 0
+            const otherSelected = selectedSyndicates.filter(id => id !== syndicate.id);
+            const metrics = calculateSyndicateMetrics(
+              syndicate,
+              otherSelected,
+              syndicates,
+              globalSettings
+            );
+            return { syndicate, priority, metrics };
+          });
+
+          // Sort by score (highest first), but keep excluded ones at the bottom
+          const sortedSyndicates = syndicateScores.sort((a, b) => {
+            if (a.priority.excluded && !b.priority.excluded) return 1;
+            if (!a.priority.excluded && b.priority.excluded) return -1;
+            return b.priority.score - a.priority.score;
+          });
+
+          // Calculate running totals
+          const totals = selectedSyndicates.reduce((acc, synId) => {
+            const synData = syndicateScores.find(s => s.syndicate.id === synId);
+            if (synData) {
+              return {
+                recipients: acc.recipients + synData.metrics.incrementalCount,
+                reservation: acc.reservation + synData.metrics.incrementalReservation
+              };
+            }
+            return acc;
+          }, { recipients: 0, reservation: 0 });
+
+          const handleToggleSyndicate = (syndicateId) => {
+            if (selectedSyndicates.includes(syndicateId)) {
+              setSelectedSyndicates(selectedSyndicates.filter(id => id !== syndicateId));
+              const newPriorities = { ...priorities };
+              delete newPriorities[syndicateId];
+              setPriorities(newPriorities);
+            } else {
+              setSelectedSyndicates([...selectedSyndicates, syndicateId]);
+              setPriorities({ ...priorities, [syndicateId]: selectedSyndicates.length + 1 });
+            }
+          };
+
+          const handleSave = () => {
+            const updatedDeal = {
+              ...deal,
+              selected_syndicates: selectedSyndicates.map(id => ({
+                id,
+                priority: priorities[id] || 999
+              })).sort((a, b) => a.priority - b.priority)
+            };
+            onSave(updatedDeal);
+          };
+
+          const handleDownloadUserList = () => {
+            // Collect all unique user IDs from selected syndicates
+            const allUserIds = new Set();
+            selectedSyndicates.forEach(synId => {
+              const syndicate = syndicates.find(s => s.id === synId);
+              if (syndicate && syndicate.members) {
+                syndicate.members.forEach(member => {
+                  allUserIds.add(member.id);
+                });
+              }
+            });
+
+            // Create CSV content
+            const csvContent = 'User ID\n' + Array.from(allUserIds).join('\n');
+            
+            // Create blob and download
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${deal.company_name.replace(/\s+/g, '_')}_user_ids.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+          };
+
+          return (
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-lg max-w-6xl w-full p-6 max-h-[90vh] overflow-y-auto">
+                <h3 className="text-lg font-medium mb-2">Select Syndicates for {deal.company_name}</h3>
+                <p className="text-sm text-gray-600 mb-4">
+                  Syndicates are prioritized based on mandate fit, associated funds, and recent deal frequency.
+                </p>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <div className="grid grid-cols-4 gap-4 text-center">
+                    <div>
+                      <div className="text-2xl font-bold text-blue-900">{selectedSyndicates.length}</div>
+                      <div className="text-sm text-gray-600">Syndicates Selected</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-blue-900">{totals.recipients.toLocaleString()}</div>
+                      <div className="text-sm text-gray-600">Total Recipients</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-blue-900">
+                        ${(totals.reservation / 1000000).toFixed(2)}M
+                      </div>
+                      <div className="text-sm text-gray-600">Expected Reservation</div>
+                    </div>
+                    <div>
+                      <div className="text-2xl font-bold text-green-900">
+                        ${(deal.target_reservation / 1000000).toFixed(2)}M
+                      </div>
+                      <div className="text-sm text-gray-600">Goal Reservation</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {sortedSyndicates.map(({ syndicate, priority, metrics }) => {
+                    const isSelected = selectedSyndicates.includes(syndicate.id);
+                    const isExcluded = priority.excluded;
+
+                    return (
+                      <div
+                        key={syndicate.id}
+                        className={`border rounded-lg p-4 ${
+                          isExcluded ? 'bg-gray-50 opacity-60' : 'bg-white'
+                        } ${isSelected ? 'ring-2 ring-blue-500' : ''}`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                disabled={isExcluded}
+                                onChange={() => handleToggleSyndicate(syndicate.id)}
+                                className="w-5 h-5"
+                              />
+                              <div>
+                                <h4 className="font-semibold text-gray-900">{syndicate.name}</h4>
+                                <p className="text-sm text-gray-600">{syndicate.description}</p>
+                              </div>
+                            </div>
+
+                            {!isExcluded && (
+                              <div className="ml-8 grid grid-cols-4 gap-4 mt-3">
+                                <div className="bg-gray-50 rounded p-2">
+                                  <div className="text-xs text-gray-500">Score</div>
+                                  <div className="text-lg font-semibold text-gray-900">{priority.score}</div>
+                                </div>
+                                <div className="bg-gray-50 rounded p-2">
+                                  <div className="text-xs text-gray-500">Eligible Members</div>
+                                  <div className="text-lg font-semibold text-gray-900">
+                                    {metrics.totalEligible}
+                                  </div>
+                                </div>
+                                <div className="bg-gray-50 rounded p-2">
+                                  <div className="text-xs text-gray-500">Incremental</div>
+                                  <div className="text-lg font-semibold text-blue-600">
+                                    +{metrics.incrementalCount}
+                                  </div>
+                                  {metrics.overlapCount > 0 && (
+                                    <div className="text-xs text-gray-500">
+                                      ({metrics.overlapCount} overlap)
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="bg-gray-50 rounded p-2">
+                                  <div className="text-xs text-gray-500">Incremental $</div>
+                                  <div className="text-lg font-semibold text-green-600">
+                                    +${(metrics.incrementalReservation / 1000).toFixed(0)}K
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="ml-8 mt-3">
+                              {priority.reasons.map((reason, idx) => (
+                                <div key={idx} className="text-xs text-gray-600 flex items-center gap-2">
+                                  <span className={isExcluded ? 'text-red-600' : 'text-blue-600'}>
+                                    {isExcluded ? '✗' : '✓'}
+                                  </span>
+                                  {reason}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {isSelected && !isExcluded && (
+                            <div className="ml-4">
+                              <label className="text-xs text-gray-500">Priority</label>
+                              <input
+                                type="number"
+                                min="1"
+                                value={priorities[syndicate.id] || ''}
+                                onChange={(e) =>
+                                  setPriorities({ ...priorities, [syndicate.id]: parseInt(e.target.value) })
+                                }
+                                className="w-16 border rounded px-2 py-1 text-sm"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-6 flex justify-between items-center">
+                  <button
+                    onClick={handleDownloadUserList}
+                    disabled={selectedSyndicates.length === 0}
+                    className={`px-4 py-2 rounded flex items-center gap-2 ${
+                      selectedSyndicates.length === 0
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-green-600 text-white hover:bg-green-700'
+                    }`}
+                  >
+                    ⬇️ Download User List
+                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={onClose}
+                      className="px-4 py-2 border rounded hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      Save Selection
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        // ================== SYNDICATES MANAGEMENT ==================
+        const SyndicatesManagement = ({ syndicates, funds, onAddSyndicate, onEditSyndicate, onDeleteSyndicate, onViewMembers }) => {
+          return (
+            <div>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">Syndicates</h2>
+                <button
+                  onClick={onAddSyndicate}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center gap-2"
+                >
+                  <span>+</span> Add Syndicate / Manual List
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {syndicates.map(syndicate => (
+                  <div key={syndicate.id} className="bg-white shadow-sm rounded-lg p-5">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h3 className="font-semibold text-gray-900">{syndicate.name}</h3>
+                        <p className="text-sm text-gray-600 mt-1">{syndicate.description}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => onEditSyndicate(syndicate)}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="Edit"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => onDeleteSyndicate(syndicate.id)}
+                          className="text-red-600 hover:text-red-900"
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                      <div>
+                        <div className="text-xs text-gray-500">Members</div>
+                        <div className="font-medium">{syndicate.member_count}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Deals (30d)</div>
+                        <div className="font-medium">{syndicate.deals_sent_30d}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Avg Reservation</div>
+                        <div className="font-medium">${syndicate.avg_reservation}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-gray-500">Type</div>
+                        <div className="font-medium capitalize">{syndicate.type}</div>
+                      </div>
+                    </div>
+
+                    {syndicate.mandate && (
+                      <div className="text-xs text-gray-600 mb-3 p-2 bg-gray-50 rounded">
+                        <span className="font-medium">Mandate:</span> {syndicate.mandate}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => onViewMembers(syndicate)}
+                      className="text-sm text-blue-600 hover:text-blue-900"
+                    >
+                      View/Edit Members →
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        };
+
+        // ================== EDIT SYNDICATE MODAL ==================
+        const EditSyndicateModal = ({ syndicate, funds, onClose, onSave }) => {
+          const [formData, setFormData] = useState({
+            name: syndicate.name || '',
+            code: syndicate.code || '',
+            description: syndicate.description || '',
+            type: syndicate.type || 'standard',
+            mandate: syndicate.mandate || '',
+            associated_funds: syndicate.associated_funds || [],
+            member_count: syndicate.member_count || 0,
+            members: syndicate.members || []
+          });
+
+          const [uploadType, setUploadType] = useState('none'); // 'none', 'csv', 'include', 'exclude'
+
+          const handleSubmit = () => {
+            if (!formData.name || !formData.code) {
+              alert('Please fill in name and code');
+              return;
+            }
+
+            const updatedSyndicate = {
+              ...syndicate,
+              ...formData,
+              id: syndicate.id || `syn_${Date.now()}`,
+              active_members: Math.floor(formData.member_count * 0.8),
+              avg_reservation: 1000,
+              deals_sent_30d: syndicate.deals_sent_30d || 0
+            };
+
+            onSave(updatedSyndicate);
+          };
+
+          return (
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-lg max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+                <h3 className="text-lg font-medium mb-4">
+                  {syndicate.isNew ? 'Add New Syndicate / Manual List' : `Edit ${syndicate.name}`}
+                </h3>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                        placeholder="e.g., AI-First Syndicate"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Code *
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.code}
+                        onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                        className="w-full border rounded px-3 py-2"
+                        placeholder="e.g., FFAF"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Description
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      className="w-full border rounded px-3 py-2"
+                      placeholder="Brief description..."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Type
+                    </label>
+                    <select
+                      value={formData.type}
+                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                      className="w-full border rounded px-3 py-2"
+                    >
+                      <option value="standard">Standard Syndicate</option>
+                      <option value="manual-include">Manual List (Include)</option>
+                      <option value="manual-exclude">Manual List (Exclude)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Mandate / Investment Thesis
+                    </label>
+                    <textarea
+                      value={formData.mandate}
+                      onChange={(e) => setFormData({ ...formData, mandate: e.target.value })}
+                      className="w-full border rounded px-3 py-2"
+                      rows="2"
+                      placeholder="e.g., AI, machine learning, LLMs, computer vision, NLP"
+                    />
+                  </div>
+
+                  {syndicate.isNew && (
+                    <div className="border-t pt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Upload Member List
+                      </label>
+                      <div className="space-y-2">
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            checked={uploadType === 'none'}
+                            onChange={() => setUploadType('none')}
+                            className="mr-2"
+                          />
+                          <span className="text-sm">No upload (empty syndicate)</span>
+                        </label>
+                        <label className="flex items-center">
+                          <input
+                            type="radio"
+                            checked={uploadType === 'csv'}
+                            onChange={() => setUploadType('csv')}
+                            className="mr-2"
+                          />
+                          <span className="text-sm">Upload CSV file</span>
+                        </label>
+                      </div>
+                      {uploadType === 'csv' && (
+                        <div className="mt-3">
+                          <input
+                            type="file"
+                            accept=".csv"
+                            className="w-full border rounded px-3 py-2"
+                            onChange={(e) => {
+                              // In real implementation, parse CSV here
+                              alert('CSV upload would be processed here');
+                            }}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            CSV should have columns: name, email
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    onClick={onClose}
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSubmit}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    {syndicate.isNew ? 'Create' : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        // ================== VIEW MEMBERS MODAL ==================
+        const ViewMembersModal = ({ syndicate, onClose, onSave }) => {
+          const [members, setMembers] = useState([...(syndicate.members || [])]);
+          const [editingId, setEditingId] = useState(null);
+          const [searchTerm, setSearchTerm] = useState('');
+
+          const handleEdit = (id, field, value) => {
+            setMembers(members.map(m => m.id === id ? { ...m, [field]: value } : m));
+          };
+
+          const handleDelete = (id) => {
+            if (window.confirm('Remove this member?')) {
+              setMembers(members.filter(m => m.id !== id));
+            }
+          };
+
+          const handleAddMember = () => {
+            const newMember = {
+              id: `member_new_${Date.now()}`,
+              name: 'New Member',
+              email: 'new@example.com',
+              deals_received_30d: 0,
+              frequency_preference: 'All',
+              unsubscribed: false,
+              avg_reservation: 1000
+            };
+            setMembers([...members, newMember]);
+            setEditingId(newMember.id);
+          };
+
+          const handleSave = () => {
+            onSave({
+              ...syndicate,
+              members: members,
+              member_count: members.length,
+              active_members: members.filter(m => !m.unsubscribed && m.frequency_preference !== 'None').length
+            });
+          };
+
+          const filteredMembers = members.filter(m =>
+            m.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            m.email.toLowerCase().includes(searchTerm.toLowerCase())
+          );
+
+          return (
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-lg max-w-5xl w-full p-6 max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium">Members of {syndicate.name}</h3>
+                  <button
+                    onClick={onClose}
+                    className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="flex justify-between items-center mb-4">
+                  <div className="text-sm text-gray-600">
+                    Total: {members.length} members
+                  </div>
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      placeholder="Search members..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="border rounded px-3 py-1 text-sm"
+                    />
+                    <button
+                      onClick={handleAddMember}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                    >
+                      + Add Member
+                    </button>
+                  </div>
+                </div>
+
+                <div className="border rounded overflow-hidden">
+                  <table className="min-w-full divide-y">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deals (30d)</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {filteredMembers.map(member => (
+                        <tr key={member.id} className="hover:bg-gray-50">
+                          <td className="px-4 py-3">
+                            {editingId === member.id ? (
+                              <input
+                                value={member.name}
+                                onChange={(e) => handleEdit(member.id, 'name', e.target.value)}
+                                className="border rounded px-2 py-1 text-sm w-full"
+                              />
+                            ) : (
+                              <div className="text-sm">{member.name}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {editingId === member.id ? (
+                              <input
+                                value={member.email}
+                                onChange={(e) => handleEdit(member.id, 'email', e.target.value)}
+                                className="border rounded px-2 py-1 text-sm w-full"
+                              />
+                            ) : (
+                              <div className="text-sm text-gray-500">{member.email}</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm">{member.deals_received_30d}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-sm">
+                              {member.unsubscribed ? (
+                                <span className="text-red-600">Unsubscribed</span>
+                              ) : member.frequency_preference === 'None' ? (
+                                <span className="text-orange-600">No deals</span>
+                              ) : (
+                                <span className="text-green-600">Active</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              {editingId === member.id ? (
+                                <button
+                                  onClick={() => setEditingId(null)}
+                                  className="text-green-600 hover:text-green-900"
+                                >
+                                  ✓
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => setEditingId(member.id)}
+                                  className="text-blue-600 hover:text-blue-900"
+                                >
+                                  ✏️
+                                </button>
+                              )}
+                              <button
+                                onClick={() => handleDelete(member.id)}
+                                className="text-red-600 hover:text-red-900"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3">
+                  <button
+                    onClick={onClose}
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        // ================== GLOBAL CONTROLS ==================
+        const GlobalControls = ({ settings, onUpdateSettings }) => {
+          const [formData, setFormData] = useState({ ...settings });
+
+          const handleSave = () => {
+            onUpdateSettings(formData);
+            alert('Settings updated successfully!');
+          };
+
+          return (
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Global Controls</h2>
+              <div className="bg-white shadow-sm rounded-lg p-6 max-w-2xl">
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Show More Than One Deal at a Time
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          checked={formData.show_multiple_deals === true}
+                          onChange={() => setFormData({ ...formData, show_multiple_deals: true })}
+                          className="mr-2"
+                        />
+                        <span className="text-sm">On</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          checked={formData.show_multiple_deals === false}
+                          onChange={() => setFormData({ ...formData, show_multiple_deals: false })}
+                          className="mr-2"
+                        />
+                        <span className="text-sm">Off</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Maximum Deals per Individual (30 days)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      {[3, 5, 7, 10].map(num => (
+                        <label key={num} className="flex items-center">
+                          <input
+                            type="radio"
+                            checked={formData.max_deals_per_individual_30d === num}
+                            onChange={() =>
+                              setFormData({ ...formData, max_deals_per_individual_30d: num })
+                            }
+                            className="mr-2"
+                          />
+                          <span className="text-sm">{num}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Maximum Deals per Syndicate (30 days)
+                    </label>
+                    <div className="flex items-center space-x-4">
+                      {[1, 2, 3, 5].map(num => (
+                        <label key={num} className="flex items-center">
+                          <input
+                            type="radio"
+                            checked={formData.max_deals_per_syndicate_30d === num}
+                            onChange={() =>
+                              setFormData({ ...formData, max_deals_per_syndicate_30d: num })
+                            }
+                            className="mr-2"
+                          />
+                          <span className="text-sm">{num}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end pt-4">
+                    <button
+                      onClick={handleSave}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    >
+                      Save Rules
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        // ================== EMAIL GENERATION ==================
+        const EmailGeneration = () => (
+          <div className="bg-white rounded-lg shadow-sm p-12 text-center">
+            <div className="max-w-md mx-auto">
+              <div className="text-6xl mb-4">📧</div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Email Generation</h2>
+              <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6">
+                <p className="text-lg font-semibold text-yellow-800">Hold Off Until Version 2</p>
+                <p className="text-sm text-yellow-700 mt-2">
+                  Email campaign features are currently in development and will be available in the next version.
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
