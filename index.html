@@ -484,13 +484,23 @@
 
           const handleAddDeal = async (newDeal) => {
             try {
-              if (USE_MOCK_DATA) {
-                setData({ ...data, deals: [...data.deals, newDeal] });
-              } else {
-                const createdDeal = await api.post('/api/deals', newDeal);
-                setData({ ...data, deals: [...data.deals, createdDeal] });
-              }
+              // Always update local state immediately
+              const dealWithId = { ...newDeal, id: `DEAL${Date.now()}` };
+              setData({ ...data, deals: [...data.deals, dealWithId] });
               setCreatingDeal(false);
+              
+              // Call n8n webhook in background
+              console.log('🚀 Calling n8n Add Deal:', N8N_ENDPOINTS.ADD_DEAL);
+              api.post(N8N_ENDPOINTS.ADD_DEAL, newDeal)
+                .then(result => {
+                  console.log('✅ n8n response:', result);
+                  alert('Deal saved to Google Sheets! ✅');
+                })
+                .catch(err => {
+                  console.error('❌ n8n failed:', err);
+                  alert('Warning: Deal added locally but n8n sync failed');
+                });
+                
             } catch (err) {
               alert('Failed to create deal: ' + err.message);
             }
@@ -560,12 +570,22 @@
 
           const handleAddSyndicate = async (newSyndicate) => {
             try {
-              if (USE_MOCK_DATA) {
-                setData({ ...data, syndicates: [...data.syndicates, newSyndicate] });
-              } else {
-                const created = await api.post('/api/syndicates', newSyndicate);
-                setData({ ...data, syndicates: [...data.syndicates, created] });
-              }
+              // Always update local state immediately for good UX
+              const syndicateWithId = { ...newSyndicate, id: `SYN${Date.now()}` };
+              setData({ ...data, syndicates: [...data.syndicates, syndicateWithId] });
+              
+              // Call n8n webhook (don't wait, run in background)
+              console.log('🚀 Calling n8n Add Syndicate:', N8N_ENDPOINTS.ADD_SYNDICATE);
+              api.post(N8N_ENDPOINTS.ADD_SYNDICATE, newSyndicate)
+                .then(result => {
+                  console.log('✅ n8n response:', result);
+                  alert('Syndicate saved to Google Sheets! ✅');
+                })
+                .catch(err => {
+                  console.error('❌ n8n failed:', err);
+                  alert('Warning: Syndicate added locally but n8n sync failed');
+                });
+                
             } catch (err) {
               alert('Failed to create syndicate: ' + err.message);
             }
