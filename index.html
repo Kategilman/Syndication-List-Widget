@@ -75,13 +75,35 @@
           },
           
           async post(endpoint, data) {
-            const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(data)
-            });
-            if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
-            return response.json();
+            console.log('🔵 API.POST START');
+            console.log('  Endpoint:', endpoint);
+            console.log('  Full URL:', `${API_BASE_URL}${endpoint}`);
+            console.log('  Payload:', data);
+            
+            try {
+              const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+              });
+              
+              console.log('  Response status:', response.status);
+              console.log('  Response OK?', response.ok);
+              
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error('  ❌ Response not OK:', errorText);
+                throw new Error(`API Error: ${response.statusText}`);
+              }
+              
+              const result = await response.json();
+              console.log('  ✅ Response data:', result);
+              return result;
+              
+            } catch (error) {
+              console.error('  ❌ Fetch error:', error);
+              throw error;
+            }
           },
           
           async put(endpoint, data) {
@@ -458,19 +480,28 @@
 
           // Load initial data
           useEffect(() => {
+            console.log('🟢 APP INITIALIZED');
+            console.log('  API_BASE_URL:', API_BASE_URL);
+            console.log('  USE_MOCK_DATA:', USE_MOCK_DATA);
+            console.log('  N8N_ENDPOINTS:', N8N_ENDPOINTS);
+            
             const loadData = async () => {
               setLoading(true);
               setError(null);
               try {
                 if (USE_MOCK_DATA) {
+                  console.log('  Loading mock data...');
                   setData(generateMockData());
+                  console.log('  ✅ Mock data loaded');
                 } else {
+                  console.log('  Fetching real data from /api/data...');
                   const response = await api.get('/api/data');
                   setData(response);
+                  console.log('  ✅ Real data loaded');
                 }
               } catch (err) {
                 setError(err.message);
-                console.error('Failed to load data:', err);
+                console.error('❌ Failed to load data:', err);
               } finally {
                 setLoading(false);
               }
@@ -569,13 +600,21 @@
           };
 
           const handleAddSyndicate = async (newSyndicate) => {
+            console.log('🟢 handleAddSyndicate CALLED');
+            console.log('  Input data:', newSyndicate);
+            
             try {
               // Always update local state immediately for good UX
               const syndicateWithId = { ...newSyndicate, id: `SYN${Date.now()}` };
+              console.log('  Generated ID:', syndicateWithId.id);
+              
               setData({ ...data, syndicates: [...data.syndicates, syndicateWithId] });
+              console.log('  Local state updated');
               
               // Call n8n webhook (don't wait, run in background)
               console.log('🚀 Calling n8n Add Syndicate:', N8N_ENDPOINTS.ADD_SYNDICATE);
+              console.log('  Full URL:', API_BASE_URL + N8N_ENDPOINTS.ADD_SYNDICATE);
+              
               api.post(N8N_ENDPOINTS.ADD_SYNDICATE, newSyndicate)
                 .then(result => {
                   console.log('✅ n8n response:', result);
@@ -587,6 +626,7 @@
                 });
                 
             } catch (err) {
+              console.error('❌ handleAddSyndicate ERROR:', err);
               alert('Failed to create syndicate: ' + err.message);
             }
           };
