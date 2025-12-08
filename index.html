@@ -480,83 +480,72 @@
           const [viewingMembers, setViewingMembers] = useState(null);
 
           // Load initial data
-          useEffect(() => {
-            console.log('🟢 APP INITIALIZED');
-            console.log('  API_BASE_URL:', API_BASE_URL);
-            console.log('  USE_MOCK_DATA:', USE_MOCK_DATA);
-            console.log('  N8N_ENDPOINTS:', N8N_ENDPOINTS);
+          // Load initial data
             
-            const loadData = async () => {
-              setLoading(true);
-              setError(null);
-              try {
-                if (USE_MOCK_DATA) {
-                  console.log('  Loading mock data...');
-                  setData(generateMockData());
-                  console.log('  ✅ Mock data loaded');
-                } else {
-                  console.log('  Fetching real data from', N8N_ENDPOINTS.GET_INITIAL_DATA);
-                  let response = await api.get(N8N_ENDPOINTS.GET_INITIAL_DATA);
-                  console.log('  ✅ Real data loaded:', response);
-                  
-                  // Handle if response is wrapped in array (n8n sometimes does this)
-                  if (Array.isArray(response) && response.length > 0) {
-                    console.log('  ⚠️ Response is array, extracting first item');
-                    response = response[0];
-                  }
-                  
-                  // DEFENSIVE: Provide defaults for any missing fields
-                  const defaultData = {
-                    deals: response.deals || [],
-                    syndicates: response.syndicates || [],
-                    sponsorTeams: response.sponsorTeams || [
-                      { id: 'blue', name: 'Blue Team', color: '#3B82F6' },
-                      { id: 'green', name: 'Green Team', color: '#10B981' },
-                      { id: 'red', name: 'Red Team', color: '#EF4444' },
-                      { id: 'purple', name: 'Purple Team', color: '#8B5CF6' }
-                    ],
-                    funds: response.funds || [
-                      { id: 'castor', name: 'Castor Fund' },
-                      { id: 'pollux', name: 'Pollux Fund' },
-                      { id: 'vega', name: 'Vega Fund' },
-                      { id: 'sirius', name: 'Sirius Fund' }
-                    ],
-                    globalSettings: response.globalSettings || {
-                      maxDealsPerMonth: 3,
-                      defaultMinInvestment: 5000,
-                      defaultMaxInvestment: 100000
-                    }
-                  };
-                  
-                  console.log('  📦 Final data structure with defaults:', {
-                    deals: defaultData.deals.length,
-                    syndicates: defaultData.syndicates.length,
-                    sponsorTeams: defaultData.sponsorTeams.length,
-                    funds: defaultData.funds.length,
-                    missingFields: {
-                      deals: !response.deals,
-                      syndicates: !response.syndicates,
-                      sponsorTeams: !response.sponsorTeams,
-                      funds: !response.funds
-                    }
-                  });
-                  
-                  // Warn if any fields were missing
-                  if (!response.sponsorTeams || !response.funds) {
-                    console.warn('  ⚠️ Some fields were missing from n8n response and filled with defaults');
-                  }
-                  
-                  setData(defaultData);
-                }
-              } catch (err) {
-                setError(err.message);
-                console.error('❌ Failed to load data:', err);
-              } finally {
-                setLoading(false);
-              }
+        useEffect(() => {
+          console.log('🟢 APP INITIALIZED');
+          console.log('  API_BASE_URL:', API_BASE_URL);
+          console.log('  USE_MOCK_DATA:', USE_MOCK_DATA);
+          console.log('  N8N_ENDPOINTS:', N8N_ENDPOINTS);
+        
+          // Make backend settings look like what the frontend expects
+          const normalizeData = (raw) => {
+            if (!raw) return raw;
+        
+            const backendSettings = raw.globalSettings || {};
+        
+            const normalizedSettings = {
+              // per-person cap used in syndicate selection
+              max_deals_per_individual_30d:
+                backendSettings.max_deals_per_individual_30d ??
+                backendSettings.maxDealsPerMonth ??
+                3,
+        
+              // how many deals a syndicate can get in 30d (used in priority logic)
+              max_deals_per_syndicate_30d:
+                backendSettings.max_deals_per_syndicate_30d ??
+                backendSettings.maxDealsPerSyndicate30d ??
+                5,
+        
+              // concurrent deals per syndicate
+              max_concurrent_deals_per_syndicate:
+                backendSettings.max_concurrent_deals_per_syndicate ??
+                backendSettings.maxConcurrentDealsPerSyndicate ??
+                1,
             };
-            loadData();
-          }, []);
+        
+            return {
+              ...raw,
+              globalSettings: normalizedSettings,
+            };
+          };
+        
+          const loadData = async () => {
+            setLoading(true);
+            setError(null);
+            try {
+              if (USE_MOCK_DATA) {
+                console.log('  Loading mock data...');
+                setData(generateMockData());
+                console.log('  ✅ Mock data loaded');
+              } else {
+                console.log('  Fetching real data from /get-initial-data...');
+                const response = await api.get(N8N_ENDPOINTS.GET_INITIAL_DATA);
+                const normalized = normalizeData(response);
+                setData(normalized);
+                console.log('  ✅ Real data loaded', normalized);
+              }
+            } catch (err) {
+              setError(err.message);
+              console.error('❌ Failed to load data:', err);
+            } finally {
+              setLoading(false);
+            }
+          };
+        
+          loadData();
+        }, []);
+
 
           if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>;
           if (error) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-red-600">Error: {error}</div>;
