@@ -489,37 +489,52 @@
           console.log('  N8N_ENDPOINTS:', N8N_ENDPOINTS);
         
           // Make backend settings look like what the frontend expects
+          
           const normalizeData = (raw) => {
             if (!raw) return raw;
-        
+
             const backendSettings = raw.globalSettings || {};
-        
+
             const normalizedSettings = {
               // per-person cap used in syndicate selection
               max_deals_per_individual_30d:
                 backendSettings.max_deals_per_individual_30d ??
                 backendSettings.maxDealsPerMonth ??
                 3,
-        
+
               // how many deals a syndicate can get in 30d (used in priority logic)
               max_deals_per_syndicate_30d:
                 backendSettings.max_deals_per_syndicate_30d ??
                 backendSettings.maxDealsPerSyndicate30d ??
                 5,
-        
+
               // concurrent deals per syndicate
               max_concurrent_deals_per_syndicate:
                 backendSettings.max_concurrent_deals_per_syndicate ??
                 backendSettings.maxConcurrentDealsPerSyndicate ??
                 1,
             };
-        
+
+            // Helper: de-duplicate arrays coming back from n8n by `id`
+            const dedupeById = (items = []) => {
+              if (!Array.isArray(items)) return [];
+              const map = {};
+              for (const item of items) {
+                if (!item || !item.id) continue;
+                // last one wins; they are identical anyway, this just drops duplicates
+                map[item.id] = item;
+              }
+              return Object.values(map);
+            };
+
             return {
               ...raw,
+              deals: dedupeById(raw.deals),
+              syndicates: dedupeById(raw.syndicates),
+              members: dedupeById(raw.members),
               globalSettings: normalizedSettings,
             };
           };
-        
           const loadData = async () => {
             setLoading(true);
             setError(null);
