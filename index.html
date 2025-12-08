@@ -496,8 +496,20 @@
                   console.log('  ✅ Mock data loaded');
                 } else {
                   console.log('  Fetching real data from', N8N_ENDPOINTS.GET_INITIAL_DATA);
-                  const response = await api.get(N8N_ENDPOINTS.GET_INITIAL_DATA);
+                  let response = await api.get(N8N_ENDPOINTS.GET_INITIAL_DATA);
                   console.log('  ✅ Real data loaded:', response);
+                  
+                  // Handle if response is wrapped in array (n8n sometimes does this)
+                  if (Array.isArray(response) && response.length > 0) {
+                    console.log('  ⚠️ Response is array, extracting first item');
+                    response = response[0];
+                  }
+                  
+                  console.log('  📦 Final data structure:', {
+                    deals: response.deals?.length || 0,
+                    syndicates: response.syndicates?.length || 0
+                  });
+                  
                   setData(response);
                 }
                 }
