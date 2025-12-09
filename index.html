@@ -61,7 +61,8 @@
           ADD_DEAL: '/add-deal',
           PRIORITIZE_SYNDICATES: '/prioritize-syndicates',
           CALCULATE_RESERVATION: '/calculate-reservation',
-          ADD_SYNDICATE: '/add-syndicate'
+          ADD_SYNDICATE: '/add-syndicate',
+          UPDATE_DEAL: '/update-deal'
         };
         
         // API Helper Functions
@@ -592,13 +593,21 @@
 
           const handleUpdateDeal = async (updatedDeal) => {
             try {
-              if (USE_MOCK_DATA) {
-                const updatedDeals = data.deals.map(d => d.id === updatedDeal.id ? updatedDeal : d);
-                setData({ ...data, deals: updatedDeals });
-              } else {
-                const updated = await api.put(`/api/deals/${updatedDeal.id}`, updatedDeal);
-                const updatedDeals = data.deals.map(d => d.id === updated.id ? updated : d);
-                setData({ ...data, deals: updatedDeals });
+              // Always update local state first so the UI stays responsive
+              const updatedDeals = data.deals.map(d => d.id === updatedDeal.id ? updatedDeal : d);
+              setData({ ...data, deals: updatedDeals });
+      
+              // In real mode, also sync the update to n8n so Google Sheets stays in sync.
+              // This hits the "Webhook - Update deal" workflow (deal_id, sponsor_team, selected_syndicates).
+              if (!USE_MOCK_DATA) {
+                api.post(N8N_ENDPOINTS.UPDATE_DEAL, updatedDeal)
+                  .then((result) => {
+                    console.log('✅ Deal synced to n8n / Google Sheets:', result);
+                  })
+                  .catch((err) => {
+                    console.error('❌ Failed to sync deal to n8n:', err);
+                    alert('Warning: deal updated in this session but failed to sync to Google Sheets.');
+                  });
               }
             } catch (err) {
               alert('Failed to update deal: ' + err.message);
