@@ -56,18 +56,17 @@
         const USE_MOCK_DATA = false; // NOW USING REAL DATA FROM GOOGLE SHEETS!
         
         // n8n Webhook Endpoints
-       const N8N_ENDPOINTS = {
-      // KEEP all existing endpoints
-      GET_INITIAL_DATA: '/get-initial-data',
-      ADD_DEAL: '/add-deal',
-      PRIORITIZE_SYNDICATES: '/prioritize-syndicates',
-      CALCULATE_RESERVATION: '/calculate-reservation',
-      ADD_SYNDICATE: '/add-syndicate',
-      
-      // ADD new save endpoints
-      SAVE_DEAL: '/save-deal',
-      DELETE_DEAL: '/delete-deal'
-    };
+        const N8N_ENDPOINTS = {
+          GET_INITIAL_DATA: '/get-initial-data',
+          ADD_DEAL: '/add-deal',
+          SAVE_DEAL: '/save-deal',
+          DELETE_DEAL: '/delete-deal',
+          PRIORITIZE_SYNDICATES: '/prioritize-syndicates',
+          CALCULATE_RESERVATION: '/calculate-reservation',
+          ADD_SYNDICATE: '/add-syndicate',
+          UPDATE_SYNDICATE: '/update-syndicate',
+          DELETE_SYNDICATE: '/delete-syndicate'
+        };
         
         // API Helper Functions
         const api = {
@@ -485,87 +484,83 @@
           const [viewingMembers, setViewingMembers] = useState(null);
 
           // Load initial data
-          // Load initial data
+          useEffect(() => {
+            console.log('🟢 APP INITIALIZED');
+            console.log('  API_BASE_URL:', API_BASE_URL);
+            console.log('  USE_MOCK_DATA:', USE_MOCK_DATA);
+            console.log('  N8N_ENDPOINTS:', N8N_ENDPOINTS);
             
-        useEffect(() => {
-          console.log('🟢 APP INITIALIZED');
-          console.log('  API_BASE_URL:', API_BASE_URL);
-          console.log('  USE_MOCK_DATA:', USE_MOCK_DATA);
-          console.log('  N8N_ENDPOINTS:', N8N_ENDPOINTS);
-        
-          // Make backend settings look like what the frontend expects
-          
-          const normalizeData = (raw) => {
-            if (!raw) return raw;
-
-            const backendSettings = raw.globalSettings || {};
-
-            const normalizedSettings = {
-              // per-person cap used in syndicate selection
-              max_deals_per_individual_30d:
-                backendSettings.max_deals_per_individual_30d ??
-                backendSettings.maxDealsPerMonth ??
-                3,
-
-              // how many deals a syndicate can get in 30d (used in priority logic)
-              max_deals_per_syndicate_30d:
-                backendSettings.max_deals_per_syndicate_30d ??
-                backendSettings.maxDealsPerSyndicate30d ??
-                5,
-
-              // concurrent deals per syndicate
-              max_concurrent_deals_per_syndicate:
-                backendSettings.max_concurrent_deals_per_syndicate ??
-                backendSettings.maxConcurrentDealsPerSyndicate ??
-                1,
-            };
-
-            // Helper: de-duplicate arrays coming back from n8n by `id`
-            const dedupeById = (items = []) => {
-              if (!Array.isArray(items)) return [];
-              const map = {};
-              for (const item of items) {
-                if (!item || !item.id) continue;
-                // last one wins; they are identical anyway, this just drops duplicates
-                map[item.id] = item;
+            const loadData = async () => {
+              setLoading(true);
+              setError(null);
+              try {
+                if (USE_MOCK_DATA) {
+                  console.log('  Loading mock data...');
+                  setData(generateMockData());
+                  console.log('  ✅ Mock data loaded');
+                } else {
+                  console.log('  Fetching real data from', N8N_ENDPOINTS.GET_INITIAL_DATA);
+                  let response = await api.get(N8N_ENDPOINTS.GET_INITIAL_DATA);
+                  console.log('  ✅ Real data loaded:', response);
+                  
+                  // Handle if response is wrapped in array (n8n sometimes does this)
+                  if (Array.isArray(response) && response.length > 0) {
+                    console.log('  ⚠️ Response is array, extracting first item');
+                    response = response[0];
+                  }
+                  
+                  // DEFENSIVE: Provide defaults for any missing fields
+                  const defaultData = {
+                    deals: response.deals || [],
+                    syndicates: response.syndicates || [],
+                    sponsorTeams: response.sponsorTeams || [
+                      { id: 'blue', name: 'Blue Team', color: '#3B82F6' },
+                      { id: 'green', name: 'Green Team', color: '#10B981' },
+                      { id: 'red', name: 'Red Team', color: '#EF4444' },
+                      { id: 'purple', name: 'Purple Team', color: '#8B5CF6' }
+                    ],
+                    funds: response.funds || [
+                      { id: 'castor', name: 'Castor Fund' },
+                      { id: 'pollux', name: 'Pollux Fund' },
+                      { id: 'vega', name: 'Vega Fund' },
+                      { id: 'sirius', name: 'Sirius Fund' }
+                    ],
+                    globalSettings: response.globalSettings || {
+                      maxDealsPerMonth: 3,
+                      defaultMinInvestment: 5000,
+                      defaultMaxInvestment: 100000
+                    }
+                  };
+                  
+                  console.log('  📦 Final data structure with defaults:', {
+                    deals: defaultData.deals.length,
+                    syndicates: defaultData.syndicates.length,
+                    sponsorTeams: defaultData.sponsorTeams.length,
+                    funds: defaultData.funds.length,
+                    missingFields: {
+                      deals: !response.deals,
+                      syndicates: !response.syndicates,
+                      sponsorTeams: !response.sponsorTeams,
+                      funds: !response.funds
+                    }
+                  });
+                  
+                  // Warn if any fields were missing
+                  if (!response.sponsorTeams || !response.funds) {
+                    console.warn('  ⚠️ Some fields were missing from n8n response and filled with defaults');
+                  }
+                  
+                  setData(defaultData);
+                }
+              } catch (err) {
+                setError(err.message);
+                console.error('❌ Failed to load data:', err);
+              } finally {
+                setLoading(false);
               }
-              return Object.values(map);
             };
-
-            return {
-              ...raw,
-              deals: dedupeById(raw.deals),
-              syndicates: dedupeById(raw.syndicates),
-              members: dedupeById(raw.members),
-              globalSettings: normalizedSettings,
-            };
-          };
-          const loadData = async () => {
-            setLoading(true);
-            setError(null);
-            try {
-              if (USE_MOCK_DATA) {
-                console.log('  Loading mock data...');
-                setData(generateMockData());
-                console.log('  ✅ Mock data loaded');
-              } else {
-                console.log('  Fetching real data from /get-initial-data...');
-                const response = await api.get(N8N_ENDPOINTS.GET_INITIAL_DATA);
-                const normalized = normalizeData(response);
-                setData(normalized);
-                console.log('  ✅ Real data loaded', normalized);
-              }
-            } catch (err) {
-              setError(err.message);
-              console.error('❌ Failed to load data:', err);
-            } finally {
-              setLoading(false);
-            }
-          };
-        
-          loadData();
-        }, []);
-
+            loadData();
+          }, []);
 
           if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center">Loading...</div>;
           if (error) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-red-600">Error: {error}</div>;
@@ -596,89 +591,72 @@
           };
 
           const handleUpdateDeal = async (updatedDeal) => {
-              console.log('💾 SAVING DEAL:', updatedDeal);
-              
-              try {
-                if (USE_MOCK_DATA) {
-                  const updatedDeals = data.deals.map(d => d.id === updatedDeal.id ? updatedDeal : d);
-                  setData({ ...data, deals: updatedDeals });
-                  alert('✅ Deal saved (mock mode)');
-                } else {
-                  // Prepare data for Google Sheets
-                  const dealForSheets = {
-                    deal_id: updatedDeal.id,
-                    company_name: updatedDeal.company_name,
-                    start_date: updatedDeal.start_date,
-                    end_date: updatedDeal.end_date,
-                    sponsor_team: updatedDeal.sponsor_team,
-                    target_reservation: parseInt(updatedDeal.target_reservation) || 0,
-                    actual_reservation: parseInt(updatedDeal.actual_reservation) || 0,
-                    selected_syndicates: JSON.stringify(updatedDeal.selected_syndicates || []),
-                    stage: updatedDeal.stage,
-                    sector: updatedDeal.sector,
-                    geography: updatedDeal.geography,
-                    round_size: parseInt(updatedDeal.round_size) || 0,
-                    valuation: parseInt(updatedDeal.valuation) || 0,
-                    finalized: updatedDeal.finalized || false,
-                    locked_deal: updatedDeal.locked || false,
-                    dd_report_text: updatedDeal.dd_report?.summary || ''
-                  };
+            console.log('💾 SAVING DEAL:', updatedDeal);
+            
+            try {
+              if (USE_MOCK_DATA) {
+                const updatedDeals = data.deals.map(d => d.id === updatedDeal.id ? updatedDeal : d);
+                setData({ ...data, deals: updatedDeals });
+                alert('✅ Deal saved (mock mode)');
+              } else {
+                // Prepare data for Google Sheets
+                const dealForSheets = {
+                  deal_id: updatedDeal.id,
+                  company_name: updatedDeal.company_name,
+                  round_size: parseInt(updatedDeal.round_size) || 0,
+                  thesis: updatedDeal.thesis,
+                  finalized: updatedDeal.finalized || false,
+                  dd_report_text: updatedDeal.dd_report?.summary || updatedDeal.dd_report_text || '',
+                  created_date: updatedDeal.created_date,
+                  sent_to_syndicates: updatedDeal.sent_to_syndicates,
+                  dd_report_pdf_base64: updatedDeal.dd_report_pdf_base64 || '',
+                  sponsor_team: updatedDeal.sponsor_team,
                   
-                  console.log('📤 Sending to n8n:', dealForSheets);
+                  // Send syndicate selections
+                  selected_syndicates: updatedDeal.selected_syndicates || [],
                   
-                  const response = await api.post(N8N_ENDPOINTS.SAVE_DEAL, dealForSheets);
-                  
-                  console.log('✅ Save response:', response);
-                  
-                  const updatedDeals = data.deals.map(d => 
-                    d.id === updatedDeal.id ? updatedDeal : d
-                  );
-                  setData({ ...data, deals: updatedDeals });
-                  
-                  alert('✅ Deal saved to Google Sheets successfully!');
-                }
-              } catch (err) {
-                console.error('❌ SAVE ERROR:', err);
-                alert('Failed to save deal: ' + err.message + '\n\nCheck browser console for details.');
+                  // Send lock status
+                  locked_deal: updatedDeal.locked || false,
+                  locked: updatedDeal.locked || false
+                };
+                
+                console.log('📤 Sending to n8n:', dealForSheets);
+                
+                // Call save-deal webhook
+                const response = await api.post(N8N_ENDPOINTS.SAVE_DEAL, dealForSheets);
+                
+                console.log('✅ Save response:', response);
+                
+                // Update local state
+                const updatedDeals = data.deals.map(d => 
+                  d.id === updatedDeal.id ? updatedDeal : d
+                );
+                setData({ ...data, deals: updatedDeals });
+                
+                // Success message
+                alert('✅ Deal saved to Google Sheets successfully!');
               }
-            };
+            } catch (err) {
+              console.error('❌ SAVE ERROR:', err);
+              alert('Failed to save deal: ' + err.message + '\n\nCheck browser console for details.');
+            }
+          };
 
-            const handleDeleteDeal = async (dealId) => {
-              const confirmed = window.confirm(
-                '⚠️ Are you sure you want to delete this deal?\n\n' +
-                'This will permanently remove it from Google Sheets.\n\n' +
-                'This action cannot be undone.'
-              );
-              
-              if (!confirmed) {
-                console.log('❌ Delete cancelled');
-                return;
+          const handleDeleteDeal = async (dealId) => {
+            if (!window.confirm('Are you sure you want to delete this deal?')) return;
+            try {
+              if (USE_MOCK_DATA) {
+                const updatedDeals = data.deals.filter(d => d.id !== dealId);
+                setData({ ...data, deals: updatedDeals });
+              } else {
+                await api.delete(`/api/deals/${dealId}`);
+                const updatedDeals = data.deals.filter(d => d.id !== dealId);
+                setData({ ...data, deals: updatedDeals });
               }
-              
-              console.log('🗑️ DELETING DEAL:', dealId);
-              
-              try {
-                if (USE_MOCK_DATA) {
-                  const updatedDeals = data.deals.filter(d => d.id !== dealId);
-                  setData({ ...data, deals: updatedDeals });
-                  alert('✅ Deal deleted (mock mode)');
-                } else {
-                  const response = await api.post(N8N_ENDPOINTS.DELETE_DEAL, { 
-                    deal_id: dealId 
-                  });
-                  
-                  console.log('✅ Delete response:', response);
-                  
-                  const updatedDeals = data.deals.filter(d => d.id !== dealId);
-                  setData({ ...data, deals: updatedDeals });
-                  
-                  alert('✅ Deal deleted from Google Sheets successfully!');
-                }
-              } catch (err) {
-                console.error('❌ DELETE ERROR:', err);
-                alert('Failed to delete deal: ' + err.message + '\n\nCheck browser console.');
-              }
-            };
+            } catch (err) {
+              alert('Failed to delete deal: ' + err.message);
+            }
+          };
 
           const handleUpdateSyndicate = async (updatedSyndicate) => {
             try {
